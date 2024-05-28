@@ -1,4 +1,4 @@
-# HyperInterval: Hypernetwork approach to training weight interval regions in continual learning
+# HyperInterval: Hypernetwork approach to training weight interval regions in continual learning [![Paper](https://img.shields.io/badge/arXiv-2210.07207-brightgreen)](https://arxiv.org/pdf/2405.15444)
 
 ## Abstract
 Recently, a new Continual Learning (CL) paradigm was presented to control catastrophic forgetting, called  Interval Continual Learning (InterContiNet), which relies on enforcing interval constraints on the neural network parameter space. 
