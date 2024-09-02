@@ -37,26 +37,10 @@ def set_hyperparameters(dataset,
                 "best_model_selection_method": "val_loss",
                 "dropout_rate": [-1],
                 # not for optimization
-                "seed": [1, 2, 3, 4, 5]
+                "seed": [1, 2, 3, 4, 5],
+                "saving_folder": "./Results/"
+                f"permuted_mnist_final_grid_experiments/last_model/"
             }
-
-            # hyperparams = {
-            #     "embedding_sizes": [24],
-            #     "learning_rates": [0.001, 0.01],
-            #     "batch_sizes": [128],
-            #     "betas": [0.01, 0.005, 0.1],
-            #     "hypernetworks_hidden_layers": [[100, 100], [200, 200]],
-            #     "perturbated_epsilon": [0.0, 0.5, 1.0, 5.0],
-            #     "best_model_selection_method": "val_loss",
-            #     "dropout_rate": [-1],
-            #     # not for optimization
-            #     "seed": [1]
-            # }
-            
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f'permuted_mnist_final_grid_experiments/{hyperparams["best_model_selection_method"]}/'
-            )
 
         else:
             # single run experiment
@@ -115,12 +99,6 @@ def set_hyperparameters(dataset,
                 "number_of_epochs": 200,
                 "augmentation": True
             }
-        
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f"CIFAR-100_single_seed/"
-                f"ResNet/"
-            )
 
         else:
             # single run experiment
@@ -138,26 +116,26 @@ def set_hyperparameters(dataset,
                 "resnet_number_of_layer_groups": 3,
                 "resnet_widening_factor": 2,
                 "number_of_epochs": 200,
-                "target_network": "ResNet",
+                "target_network": "AlexNet",
                 "optimizer": "adam",
                 "augmentation": True
             }
            
-            hyperparams["saving_folder"] = (
-                "./Results/grid_search_relu/"
-                f"CIFAR-100_single_seed/"
-                f"final_run/"
-            )
+        hyperparams["saving_folder"] = (
+            "./Results/grid_search_relu/"
+            f"CIFAR-100_single_seed/"
+            f"final_run/"
+        )
         hyperparams["lr_scheduler"] = True
         hyperparams["number_of_iterations"] = None
         hyperparams["no_of_validation_samples"] = 500
-        if hyperparams["target_network"] in ["ResNet", "ZenkeNet"]:
+        if hyperparams["target_network"] in ["ResNet", "ZenkeNet", "AlexNet"]:
             hyperparams["shape"] = 32
             hyperparams["target_hidden_layers"] = None
         elif hyperparams["target_network"] == "MLP":
             hyperparams["shape"] = 3072
             hyperparams["target_hidden_layers"] = [1000, 1000]
-        hyperparams["number_of_tasks"] = 10
+        hyperparams["number_of_tasks"] = 20
         hyperparams["padding"] = None
         hyperparams["best_model_selection_method"] = "val_loss"
 
@@ -166,19 +144,6 @@ def set_hyperparameters(dataset,
 
     elif dataset == "SplitMNIST":
         if grid_search:
-            # hyperparams = {
-            #     "learning_rates": [0.001],
-            #     "batch_sizes": [128],
-            #     "betas": [0.01, 0.001, 0.1],
-            #     "hypernetworks_hidden_layers": [[75, 75], [100, 100]],
-            #     "dropout_rate": [-1],
-            #     "perturbated_epsilon": [0.0, 0.5, 1.0, 5.0],
-            #     # seed is not for optimization but for ensuring multiple results
-            #     "seed": [1],
-            #     "best_model_selection_method": "val_loss",
-            #     "embedding_sizes": [24, 72, 96, 128],
-            #     "augmentation": True
-            # }
             hyperparams = {
                 "learning_rates": [0.001],
                 "batch_sizes": [128],
@@ -190,14 +155,9 @@ def set_hyperparameters(dataset,
                 "seed": [1, 2, 3, 4, 5],
                 "best_model_selection_method": "val_loss",
                 "embedding_sizes": [72],
-                "augmentation": True
+                "augmentation": True,
+                "saving_folder": "./Results/SplitMNIST/"
             }
-
-
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f"split_mnist/augmented/"
-            )
 
         else:
             # single run experiment
@@ -251,14 +211,10 @@ def set_hyperparameters(dataset,
                 "target_network": "ResNet",
                 "use_chunks": False,
                 "number_of_epochs": 10,
-                "augmentation": True
+                "augmentation": True,
+                "saving_folder": "./Results/TinyImageNet/best_hyperparams/"
             }
 
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f"TinyImageNet/"
-                f"ResNet/"
-            )
         else:
             hyperparams = {
                "seed": [1],
@@ -313,14 +269,10 @@ def set_hyperparameters(dataset,
                 "target_network": "ResNet",
                 "use_chunks": False,
                 "number_of_epochs": 200,
-                "augmentation": True
+                "augmentation": True,
+                "saving_folder": "./Results/SubsetImageNet/best_hyperparams/"
             }
 
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f"SubsetImageNet/"
-                f"ResNet/"
-            )
         else:
             hyperparams = {
                "seed": [1],
@@ -381,10 +333,6 @@ def set_hyperparameters(dataset,
                 "best_model_selection_method": "val_loss"
             }
 
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f'CIFAR100_FeCAM_setup/{hyperparams["best_model_selection_method"]}/'
-            )
         else:
             # Single experiment
             hyperparams = {
@@ -399,27 +347,27 @@ def set_hyperparameters(dataset,
                 "resnet_number_of_layer_groups": 3,
                 "resnet_widening_factor": 2,
                 "optimizer": "adam",
-                "use_batch_norm": True,
-                "target_network": "ResNet",
+                "use_batch_norm": False,
+                "target_network": "AlexNet",
                 "use_chunks": False,
                 "number_of_epochs": 200,
-                "augmentation": True
+                "augmentation": False
             }
             # FeCAM considered three incremental scenarios: with 6, 11 and 21 tasks
             # ResNet - parts 0, 1 and 2
             # ZenkeNet - parts 3, 4 and 5
             # Also, one scenario with equal number of classes: ResNet - part 6
-            hyperparams[
-                "saving_folder"
-            ] = f"./Results/CIFAR_100_FeCAM/"
+        hyperparams[
+            "saving_folder"
+        ] = f"./Results/CIFAR_100_FeCAM/"
 
         hyperparams["lr_scheduler"] = False
         hyperparams["number_of_iterations"] = None
         hyperparams["no_of_validation_samples_per_class"] = 50
         hyperparams["no_of_validation_samples"] = 2000
-        hyperparams["number_of_tasks"] = 5
+        hyperparams["number_of_tasks"] = 20
 
-        if hyperparams["target_network"] in ["ResNet", "ZenkeNet"]:
+        if hyperparams["target_network"] in ["ResNet", "ZenkeNet", "AlexNet"]:
             hyperparams["shape"] = 32
             hyperparams["target_hidden_layers"] = None
         elif hyperparams["target_network"] == "MLP":
@@ -446,14 +394,9 @@ def set_hyperparameters(dataset,
                 "seed": [1],
                 "best_model_selection_method": "val_loss",
                 "embedding_sizes": [24, 48, 72, 96],
-                "augmentation": False
+                "augmentation": False,
+                "saving_folder": "./Results/CIFAR10/"
             }
-
-
-            hyperparams["saving_folder"] = (
-                "/shared/results/HyperIntervalResults/intersections_non_forced/grid_search_relu/"
-                f"CIFAR10"
-            )
 
         else:
             # single run experiment
@@ -461,8 +404,8 @@ def set_hyperparameters(dataset,
                 "seed": [1],
                 "embedding_sizes": [72],
                 "learning_rates": [0.001],
-                "use_batch_norm": False,
-                "target_network": "ResNet",
+                "use_batch_norm": True,
+                "target_network": "AlexNet",
                 "batch_sizes": [128],
                 "betas": [0.01],
                 "perturbated_epsilon": [1.0],
@@ -472,26 +415,25 @@ def set_hyperparameters(dataset,
                 "best_model_selection_method": "val_loss",
                 "saving_folder": "./Results/CIFAR10/"
             }
-        hyperparams["lr_scheduler"] = False
+        hyperparams["lr_scheduler"] = True
         hyperparams["resnet_number_of_layer_groups"] = None
         hyperparams["resnet_widening_factor"] = None
         hyperparams["optimizer"] = "adam"
         hyperparams["number_of_iterations"] = 2000
         hyperparams["number_of_epochs"] = None
         hyperparams["no_of_validation_samples"] = 1000
-        hyperparams["target_hidden_layers"] = [400, 400]
+        if hyperparams["target_network"] in ["ResNet", "ZenkeNet", "AlexNet"]:
+            hyperparams["target_hidden_layers"] = None
+        else:
+            hyperparams["target_hidden_layers"] = [400, 400]
         hyperparams["shape"] = 32
         hyperparams["number_of_tasks"] = 5
         hyperparams["use_chunks"] = False
-        hyperparams["use_batch_norm"] = False
         hyperparams["padding"] = None
         hyperparams["best_model_selection_method"] = "val_loss"
 
         # Full-interval model or simpler one
-        hyperparams["full_interval"] = True
-
-    else:
-        raise ValueError("This dataset is not implemented!")
+        hyperparams["full_interval"] = False
 
     # General hyperparameters
     hyperparams["activation_function"] = torch.nn.ReLU()
