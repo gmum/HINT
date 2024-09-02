@@ -139,7 +139,7 @@ def prepare_split_cifar100_tasks_aka_FeCAM(
     """
     # FeCAM considered four scenarios: 5, 10 and 20 incremental tasks
     # and 5 tasks with the equal number of classes
-    assert number_of_tasks in [5, 6, 11, 21]
+    assert number_of_tasks in [5, 6, 11, 20, 21]
     # The order of image classes in the case of FeCAM was not 0-10, 11-20, etc.,
     # but it was chosen randomly by the authors, and was at follows:
     class_orders = [
@@ -167,6 +167,8 @@ def prepare_split_cifar100_tasks_aka_FeCAM(
     # Tasks with the equal number of elements, Table V, FeCAM
     elif number_of_tasks == 5:
         numbers_of_classes_per_tasks = [20 for i in range(5)]
+    elif number_of_tasks == 20:
+        numbers_of_classes_per_tasks = [5 for _ in range(20)]
 
     handlers = []
     for i in range(len(numbers_of_classes_per_tasks)):
