@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 from IntervalNets.interval_MLP import IntervalMLP
 from IntervalNets.interval_modules import parse_logits
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 import torch.optim as optim
 from VanillaNets.ResNet18 import ResNetBasic
+from VanillaNets.AlexNet import AlexNet
 from IntervalNets.interval_ResNet import IntervalResNetBasic
 from copy import deepcopy
 import Utils.hnet_middle_regularizer as hreg
@@ -15,7 +17,6 @@ from loss_functions import IBP_Loss
 from IntervalNets.hmlp_ibp_wo_nesting import HMLP_IBP
 from Utils.prepare_non_forced_scenario_params import set_hyperparameters
 from Utils.dataset_utils import *
-
 from Utils.handy_functions import *
 
 def train_single_task(hypernetwork,
@@ -103,7 +104,6 @@ def train_single_task(hypernetwork,
                 parameters["batch_size"],
                 parameters["number_of_epochs"]
             )
-        # Scheduler can be set only when the number of epochs is given
         # Scheduler can be set only when the number of epochs is given
         if parameters["lr_scheduler"]:
             current_epoch = 0
@@ -330,7 +330,7 @@ def build_multiple_task_experiment(dataset_list_of_tasks,
                              n_out=output_shape,
                              hidden_layers=parameters["target_hidden_layers"],
                              use_bias=parameters["use_bias"],
-                             no_weights=False,
+                             no_weights=True,
                              use_batch_norm=parameters["use_batch_norm"],
                              bn_track_stats=False,
                              dropout_rate=parameters["dropout_rate"]).to(parameters["device"])
@@ -354,7 +354,7 @@ def build_multiple_task_experiment(dataset_list_of_tasks,
                 num_classes=output_shape,
                 num_feature_maps=[16, 16, 32, 64, 128],
                 blocks_per_group=[2, 2, 2, 2],
-                no_weights=False,
+                no_weights=True,
                 use_batch_norm=parameters["use_batch_norm"],
                 projection_shortcut=True,
                 bn_track_stats=False,
@@ -371,7 +371,7 @@ def build_multiple_task_experiment(dataset_list_of_tasks,
                 num_classes=output_shape,
                 num_feature_maps=[16, 16, 32, 64, 128],
                 blocks_per_group=[2, 2, 2, 2],
-                no_weights=False,
+                no_weights=True,
                 use_batch_norm=parameters["use_batch_norm"],
                 projection_shortcut=True,
                 bn_track_stats=False,
@@ -389,6 +389,16 @@ def build_multiple_task_experiment(dataset_list_of_tasks,
             raise ValueError("This dataset is currently not implemented!")
 
         raise ValueError("ZenkeNet is not supported right now!")
+    
+    elif parameters["target_network"] == "AlexNet":
+        target_network = AlexNet(
+            in_shape=(parameters["input_shape"], parameters["input_shape"], 3),
+            num_classes=output_shape,
+            no_weights=True,
+            use_batch_norm=parameters["use_batch_norm"],
+            bn_track_stats=False,
+            distill_bn_stats=False
+        )
     
     if not use_chunks:
         hypernetwork = HMLP_IBP(
@@ -554,11 +564,16 @@ def main_running_experiments(path_to_datasets,
     else:
         raise ValueError("Wrong name of the dataset!")
 
+    start_time = time.time()
+
     hypernetwork, target_network, dataframe = build_multiple_task_experiment(
         dataset_tasks_list,
         parameters,
         use_chunks=parameters["use_chunks"]
     )
+
+    elapsed_time = time.time() - start_time
+
     # Calculate statistics of grid search results
     no_of_last_task = parameters["number_of_tasks"] - 1
     accuracies = dataframe.loc[
@@ -581,7 +596,8 @@ def main_running_experiments(path_to_datasets,
         f'{parameters["beta"]};'
         f'{parameters["perturbated_epsilon"]};'
         f'{parameters["kappa"]};'
-        f"{np.mean(accuracies)};{np.std(accuracies)}"
+        f"{np.mean(accuracies)};{np.std(accuracies)};"
+        f"{elapsed_time}"
     )
     append_row_to_file(
         f'{parameters["grid_search_folder"]}'
@@ -598,12 +614,11 @@ def main_running_experiments(path_to_datasets,
 
 
 if __name__ == "__main__":
-    # path_to_datasets = "/shared/sets/datasets/"
     path_to_datasets = "./Data"
     dataset = "PermutedMNIST"  # "PermutedMNIST", "CIFAR100", "SplitMNIST", "TinyImageNet", "CIFAR100_FeCAM_setup", "SubsetImageNet", "CIFAR10"
     part = 0
     TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") # Generate timestamp
-    create_grid_search = False
+    create_grid_search = True
 
     if create_grid_search:
         summary_results_filename = "grid_search_results"
@@ -618,7 +633,8 @@ if __name__ == "__main__":
         "dataset_name;augmentation;embedding_size;seed;hypernetwork_hidden_layers;"
         "use_chunks;target_network;target_hidden_layers;"
         "layer_groups;widening;final_model;optimizer;"
-        "hypernet_activation_function;learning_rate;batch_size;beta;mean_accuracy;std_accuracy"
+        "hypernet_activation_function;learning_rate;batch_size;beta;mean_accuracy;std_accuracy;"
+        "elapsed_time"
     )
 
     append_row_to_file(
