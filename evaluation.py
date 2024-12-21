@@ -1,23 +1,31 @@
 from Utils.prepare_non_forced_scenario_params import set_hyperparameters
 from Utils.dataset_utils import *
-from train_non_forced_scenario import (
+
+from Training.train_non_forced_classification_scenario import (
     load_pickle_file,
     set_seed,
-    intersection_of_embeds
+    intersection_of_embeds,
 )
+
 from IntervalNets.interval_MLP import IntervalMLP
 from IntervalNets.hmlp_ibp_wo_nesting import HMLP_IBP
-from VanillaNets.ResNet18 import ResNetBasic
 from IntervalNets.interval_ZenkeNet64 import IntervalZenkeNet
+
+from VanillaNets.ResNet18 import ResNetBasic
+from VanillaNets.AlexNet import AlexNet
+
 import torch
 import torch.nn.functional as F
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
 import os
 from scipy import stats
-from typing import Tuple
+from typing import Tuple, List, Dict
+from scipy.stats import multivariate_normal
 
 def load_dataset(dataset, path_to_datasets, hyperparameters):
     """""
@@ -68,6 +76,32 @@ def load_dataset(dataset, path_to_datasets, hyperparameters):
             ],
             use_augmentation=hyperparameters["augmentation"],
         )
+    elif dataset == "GaussianDataset":
+        return prepare_gaussian_regression_tasks(
+                    seed=hyperparameters["seed"] if isinstance(hyperparameters["seed"], int) else hyperparameters["seed"][0],
+                    no_of_validation_samples=hyperparameters["no_of_validation_samples"], 
+                    number_of_tasks=hyperparameters["number_of_tasks"]
+                    )
+    elif dataset == "ToyRegression1D":
+        return prepare_toy_regression_tasks(
+            seed=hyperparameters["seed"],
+            no_of_validation_samples=hyperparameters["no_of_validation_samples"], 
+            number_of_tasks=hyperparameters["number_of_tasks"]
+        )
+    elif dataset == "CUB200":
+        return prepare_CUB200_tasks(
+            path_to_datasets,
+            validation_size_per_class=hyperparameters[
+                "no_of_validation_samples_per_class"
+            ],
+            number_of_tasks=20,
+        )
+    elif dataset == "CIFAR10":
+        return prepare_split_cifar10_tasks(
+            path_to_datasets,
+            validation_size=hyperparameters["no_of_validation_samples"],
+            use_augmentation=hyperparameters["augmentation"]
+        )
     else:
         raise ValueError("This dataset is currently not handled!")
 
@@ -94,29 +128,42 @@ def prepare_target_network(hyperparameters, output_shape):
             n_out=output_shape,
             hidden_layers=hyperparameters["target_hidden_layers"],
             use_bias=hyperparameters["use_bias"],
-            no_weights=False,
+            no_weights=True,
         ).to(hyperparameters["device"])
     elif hyperparameters["target_network"] == "ResNet":
         if hyperparameters["dataset"] == "TinyImageNet" or hyperparameters["dataset"] == "SubsetImageNet":
             mode = "tiny"
-        elif hyperparameters["dataset"] == "CIFAR-100" or hyperparameters["dataset"] == "CIFAR100_FeCAM_setup":
+        elif hyperparameters["dataset"] in [
+            "CIFAR100",
+            "CIFAR100_FeCAM_setup",
+            "CIFAR10",
+        ]:
             mode = "cifar"
+            num_feature_maps = [16, 16, 32, 64, 128]
+            cutout_mod = True
+        elif hyperparameters["dataset"] == "CUB200":
+            mode = "cub"
+            num_feature_maps = [64, 64, 128, 256, 512]
+            cutout_mod = False
         else:
             mode = "default"
+        
+        assert not hyperparameters["full_interval"], "Interval version of ResNet is not supported!"
+        
         target_network = ResNetBasic(
-            in_shape=(hyperparameters["shape"], hyperparameters["shape"], 3),
-                use_bias=False,
-                use_fc_bias=hyperparameters["use_bias"],
-                bottleneck_blocks=False,
-                num_classes=output_shape,
-                num_feature_maps=[16, 16, 32, 64, 128],
-                blocks_per_group=[2, 2, 2, 2],
-                no_weights=False,
-                use_batch_norm=hyperparameters["use_batch_norm"],
-                projection_shortcut=True,
-                bn_track_stats=False,
-                cutout_mod=True,
-                mode=mode,
+            in_shape=(hyperparameters["input_shape"], hyperparameters["input_shape"], 3),
+            use_bias=False,
+            use_fc_bias=hyperparameters["use_bias"],
+            bottleneck_blocks=False,
+            num_classes=output_shape,
+            num_feature_maps=num_feature_maps,
+            blocks_per_group=[2, 2, 2, 2],
+            no_weights=True,
+            use_batch_norm=hyperparameters["use_batch_norm"],
+            projection_shortcut=True,
+            bn_track_stats=False,
+            cutout_mod=cutout_mod,
+            mode=mode,
         ).to(hyperparameters["device"])
     elif hyperparameters["target_network"] == "ZenkeNet":
         if hyperparameters["dataset"] in ["CIFAR-100", "CIFAR100_FeCAM_setup"]:
@@ -129,8 +176,19 @@ def prepare_target_network(hyperparameters, output_shape):
             in_shape=(hyperparameters["shape"], hyperparameters["shape"], 3),
             num_classes=output_shape,
             arch=architecture,
-            no_weights=False,
+            no_weights=True,
         ).to(hyperparameters["device"])
+    elif hyperparameters["target_network"] == "AlexNet" \
+        and not hyperparameters["full_interval"]:
+        target_network = AlexNet(
+            in_shape=(hyperparameters["shape"], hyperparameters["shape"], 3),
+            num_classes=output_shape,
+            no_weights=True,
+            use_batch_norm=hyperparameters["use_batch_norm"],
+            bn_track_stats=False,
+            distill_bn_stats=False
+        ).to(hyperparameters["device"])
+
     else:
         raise NotImplementedError
     return target_network
@@ -149,9 +207,7 @@ def prepare_and_load_weights_for_models(
 
     Parameters:
     -----------
-        path_to_stored_networks: str
             Path for all models located in subfolders.
-
         number_of_model: int
             The number of the currently loaded model.
         dataset: str
@@ -176,10 +232,14 @@ def prepare_and_load_weights_for_models(
         "PermutedMNIST",
         "SplitMNIST",
         "CIFAR100_FeCAM_setup",
-        "SubsetImageNet"
+        "SubsetImageNet",
+        "GaussianDataset",
+        "ToyRegression1D",
+        "CIFAR10"
     ]
     path_to_model = f"{path_to_stored_networks}{number_of_model}/"
-    hyperparameters = set_hyperparameters(dataset, grid_search=False)
+
+    hyperparameters = set_hyperparameters(dataset, grid_search=True)
     
     set_seed(seed)
     # Load proper dataset
@@ -211,34 +271,30 @@ def prepare_and_load_weights_for_models(
         f"{path_to_model}hypernetwork_"
         f'after_{hyperparameters["number_of_tasks"] - 1}_task.pt'
     )
-    target_weights = load_pickle_file(
-        f"{path_to_model}target_network_after_"
-        f'{hyperparameters["number_of_tasks"] - 1}_task.pt'
-    )
-
     perturbation_vectors = load_pickle_file(
         f"{path_to_model}perturbation_vectors_"
         f'after_{hyperparameters["number_of_tasks"] - 1}_task.pt'
     )
-
     hypernetwork._perturbated_eps_T = perturbation_vectors
-
     # Check whether the number of target weights is exactly the same like
     # the loaded weights
+    
     for prepared, loaded in zip(
-        [hypernetwork, target_network],
-        [hnet_weights, target_weights],
+        [hypernetwork],
+        [hnet_weights]
     ):
         no_of_loaded_weights = 0
         for item in loaded:
-            no_of_loaded_weights += item.shape.numel()
+            no_of_loaded_weights += item.shape.numel()       
+        
         assert prepared.num_params == no_of_loaded_weights
+
+   
     return {
         "list_of_CL_tasks": dataset_tasks_list,
         "hypernetwork": hypernetwork,
         "hypernetwork_weights": hnet_weights,
         "target_network": target_network,
-        "target_network_weights": target_weights,
         "hyperparameters": hyperparameters,
     }
 
@@ -269,10 +325,10 @@ def evaluate_target_network(
     Returns:
     --------
         torch.Tensor: Logits from the target network.
-    """
-    if target_network_type == "ResNet":
-        assert condition is not None
-    if target_network_type == "ResNet":
+    """        
+    if "ResNet" in target_network_type:
+        assert condition is not None, "ResNet uses BatchNorm layers by default!"
+
         # Only ResNet needs information about the currently tested task
         return target_network.forward(
             network_input, weights=weights, condition=condition
@@ -338,7 +394,8 @@ def plot_accuracy_curve(
         "CIFAR-100",
         "CIFAR100_FeCAM_setup",
         "SubsetImageNet",
-        "TinyImageNet"
+        "TinyImageNet",
+        "CUB200"
     ]
 
     os.makedirs(save_path, exist_ok=True)
@@ -364,6 +421,8 @@ def plot_accuracy_curve(
         tasks_list = [i+1 for i in range(5)]
     elif dataset_name == "TinyImageNet":
         tasks_list = [i+1 for i in range(40)]
+    elif dataset_name == "TinyImageNet":
+        tasks_list = [i+1 for i in range(20)]
     
 
     for (results_seed_1, results_seed_2, param) in zip(
@@ -401,6 +460,89 @@ def plot_accuracy_curve(
 
     ax.set_ylim(top=y_lim_max)
     ax.legend(loc="upper left", bbox_to_anchor=(1.05, 1.0), fontsize=fontsize)
+    plt.tight_layout()
+    fig.savefig(f"{save_path}/{filename}")
+    plt.close()
+
+def plot_accuracy_curve_for_one_seed(
+        list_of_folders_path,
+        save_path,
+        filename,
+        dataset_name = "PermutedMNIST-250",
+        y_lim_max = 100.0,
+        fontsize = 10,
+        figsize = (8, 4)
+):
+    """
+    Saves the accuracy curve for the specified mode.
+
+    Parameters:
+    ---------
+        list_of_folders_path: List[str]
+            A list with paths to stored results, one path for each seed.
+        save_path: str
+            The path where plots will be stored.
+        filename: str
+            Name of the saved plot.
+        dataset_name: str
+            A dataset name.
+        beta_params: List[float]
+            A list with beta hyperparameters.
+        y_lim_max: float
+            An upper limit for the Y-axis.
+        fontsize: int
+            Font size of titles and axes.
+        figsize: Tuple[int]
+            A tuple with width and height of the figures.
+
+    Returns:
+    --------
+        None
+    """
+
+    os.makedirs(save_path, exist_ok=True)
+
+    tasks_list = [i+1 for i in range(250)]
+    title = "Results for PermutedMNIST-250"
+    legend_loc = "upper left"
+
+    file_suffix = "results.csv"
+
+    results_list = []
+    for folder in list_of_folders_path:
+        acc_path = os.path.join(folder, file_suffix)
+        results_list.append(pd.read_csv(acc_path, sep=";"))
+
+    acc_just_after_training = []
+    acc_after_all_training_sessions = []
+
+    for pd_results in results_list:
+        acc_just_after_training.append(pd_results.loc[
+            pd_results["after_learning_of_task"] == pd_results["tested_task"], "accuracy"].values)
+        acc_after_all_training_sessions.append(pd_results.loc[
+            pd_results["after_learning_of_task"] == pd_results["after_learning_of_task"].max(), "accuracy"].values)
+
+    acc_just_after_training = np.array(acc_just_after_training).mean(axis=0)
+    acc_after_all_training_sessions = np.array(acc_after_all_training_sessions).mean(axis=0)
+
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    ax.plot(tasks_list, acc_just_after_training, label="Just after training")
+    ax.plot(tasks_list, acc_after_all_training_sessions, label="After training of all tasks")
+
+    ax.set_title(title, fontsize=fontsize)
+    ax.set_xlabel("Number of task", fontsize=fontsize)
+    ax.set_ylabel("Accuracy [%]", fontsize=fontsize)
+    ax.grid()
+    
+    if dataset_name == "PermutedMNIST-250":
+        ax.set_xticks(range(1, tasks_list[-1] + 1, 50))
+    else:
+        ax.set_xticks(range(1, tasks_list[-1] + 1))
+   
+    ax.set_ylim(top=y_lim_max)
+    ax.legend(loc=legend_loc, fontsize=fontsize)
     plt.tight_layout()
     fig.savefig(f"{save_path}/{filename}")
     plt.close()
@@ -798,7 +940,8 @@ def plot_accuracy_curve_with_confidence_intervals(
         "CIFAR-100",
         "CIFAR100_FeCAM_setup",
         "SubsetImageNet",
-        "TinyImageNet"
+        "TinyImageNet",
+        "CUB200"
     ]
 
     os.makedirs(save_path, exist_ok=True)
@@ -811,6 +954,8 @@ def plot_accuracy_curve_with_confidence_intervals(
         tasks_list = [i + 1 for i in range(40)]
     elif dataset_name == "PermutedMNIST-100":
         tasks_list = [i+1 for i in range(100)]
+    elif dataset_name == "CUB200":
+        tasks_list = [i+1 for i in range(20)]
 
     if dataset_name == "CIFAR100_FeCAM_setup":
         dataset_name = "CIFAR-100"
@@ -868,6 +1013,7 @@ def plot_accuracy_curve_with_confidence_intervals(
         ax.set_xticks(range(1, tasks_list[-1] + 1, 5))
     else:
         ax.set_xticks(range(1, tasks_list[-1] + 1))
+   
     ax.set_ylim(top=y_lim_max)
     ax.legend(loc=legend_loc, fontsize=fontsize)
     plt.tight_layout()
@@ -923,7 +1069,8 @@ def plot_accuracy_curve_with_barplot(
         "CIFAR-100",
         "CIFAR100_FeCAM_setup",
         "SubsetImageNet",
-        "TinyImageNet"
+        "TinyImageNet",
+        "SplitCUB-200"
     ]
 
     os.makedirs(save_path, exist_ok=True)
@@ -938,6 +1085,8 @@ def plot_accuracy_curve_with_barplot(
         tasks_list = [i + 1 for i in range(40)]
     elif dataset_name == "PermutedMNIST-100":
         tasks_list = [i + 1 for i in range(100)]
+    elif dataset_name == "SplitCUB-200":
+        tasks_list = [i + 1 for i in range(20)]
 
     if mode == 1:
         file_suffix = "results.csv"
@@ -1077,6 +1226,251 @@ def plot_heatmap_for_n_runs(
     plt.savefig(f"{save_path}/{filename}", dpi=300)
     plt.close()
 
+def calculate_backward_transfer(dataframe):
+    """
+    Calculate backward transfer based on dataframe with results
+    containing columns: 'after_learning_of_task', 'tested_task',
+    'accuracy'.
+    ---
+    BWT = 1/(N-1) * sum_{i=1}^{N-1} A_{N,i} - A_{i,i}
+    where N is the number of tasks, A_{i,j} is the result
+    for the network trained on the i-th task and tested
+    on the j-th task.
+
+    Returns a float with backward transfer result.
+
+    Reference: https://github.com/gmum/HyperMask/blob/main/evaluation.py
+
+    """
+    backward_transfer = 0
+    number_of_last_task = int(dataframe.max()["after_learning_of_task"])
+    # Indeed, number_of_last_task represents the number of tasks - 1
+    # due to the numeration starting from 0
+    for i in range(number_of_last_task + 1):
+        trained_on_last_task = dataframe.loc[
+            (dataframe["after_learning_of_task"] == number_of_last_task)
+            & (dataframe["tested_task"] == i)
+        ]["accuracy"].values[0]
+        trained_on_the_same_task = dataframe.loc[
+            (dataframe["after_learning_of_task"] == i) & (dataframe["tested_task"] == i)
+        ]["accuracy"].values[0]
+        backward_transfer += trained_on_last_task - trained_on_the_same_task
+    backward_transfer /= number_of_last_task
+    return backward_transfer
+
+def calculate_BWT_different_files(paths, forward=True):
+    """
+    Calculate mean backward transfer with corresponding
+    sample standard deviations based on results saved in .csv files.
+    
+    Reference: https://github.com/gmum/HyperMask/blob/main/evaluation.py
+
+    Parameters :
+    ---------
+      paths: List
+        Contains path to the results files.
+      forward: Optional, Boolean
+        Defines whether forward transfer will be calculated.
+
+    Returns:
+    --------
+      BWTs: List[float]
+        Contains consecutive backward transfer values.
+    """
+    BWTs = []
+    for path in paths:
+        dataframe = pd.read_csv(path, sep=";", index_col=0)
+        BWTs.append(calculate_backward_transfer(dataframe))
+    print(
+        f"Mean backward transfer: {np.mean(BWTs)}, "
+        f"population standard deviation: {np.std(BWTs)}"
+    )
+    return BWTs
+
+def get_subdirs(path: str = "./") -> List[str]:
+    """
+    Find the immediate subdirectories given a path to a directory of interest.
+
+    Parameters :
+    ---------
+      path: str
+        A path to the directory of interest.
+
+    Returns:
+    --------
+      subdirs: List[str]
+        Contains names of subdirectories of the given path directory.
+    """
+    subdirs = [name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name))]
+    return subdirs
+
+def calculate_BWT_different_datasets(datasets_folder: str = './HINT_models') -> Dict:
+    """
+    This function assumes that the dataset_folder contains directories
+    such as "CIFAR100/known_task_id/1/results.csv".
+
+    Parameters :
+    ---------
+      datasets_folder: str
+        A path to the datasets folders with results.
+
+    Returns:
+    --------
+      mean_results_dict: Dict
+        Contains average backward transfer values with standard deviation per dataset and available scenario.
+    """
+
+    datasets = get_subdirs(datasets_folder)
+    mean_results_dict = {}
+
+    for dataset in datasets:
+        temp_path = f"{datasets_folder}/{dataset}"
+        scenarios = get_subdirs(temp_path)
+
+        for scenario in scenarios:
+            temp_scenario_path = f"{temp_path}/{scenario}"
+            seeds = get_subdirs(temp_scenario_path)
+            paths = [f"{temp_scenario_path}/{seed}/results.csv" for seed in seeds]
+
+            bwt = calculate_BWT_different_files(paths, forward = False)
+            mean_results_dict[f"{dataset}: {scenario}"] = [np.round(np.mean(bwt),3), np.round(np.std(bwt),2)]
+
+    (pd.DataFrame.from_dict(data=mean_results_dict, orient='index', columns=['Avg', 'Std']).to_csv(f'{datasets_folder}/avg_bwt_results.csv', header=True))
+    return mean_results_dict
+
+def plot_regression_results(
+        x: List[np.ndarray],  # One array per task
+        y_pred: List[np.ndarray],  # One array per task
+        dataset_name: str = "GaussianDataset",
+        save_path: str = "./GaussianDataset.png",
+        t: float = 2.0
+    ):
+    """
+    Plot ground truth functions and predicted data for regression datasets for all tasks at once.
+
+    Parameters:
+    ----------
+    x: List[np.ndarray]
+        Input datapoints, one array per task.
+    y_pred: List[np.ndarray]
+        Output from the model, one array per task.
+    dataset_name: str
+        Name of the evaluated dataset.
+    save_folder: str
+        Contains the folder where the plot will be saved.
+    t: float, optional
+        Gaussian covariance scaling value (used only for the visualization).
+
+    Returns:
+    -------
+        None
+    """
+
+    if dataset_name == "ToyRegression1D":
+        fig, ax = plt.subplots(1, figsize=(15,8))
+        fontsize = 17
+
+        functions = [
+            lambda x : 2*x,
+            lambda x : 4*x**2-2,
+            lambda x : 8*x**3-12*x,
+            lambda x : 16*x**4 - 48*x**2 + 12,
+            lambda x : 32*x**5 - 160*x**3 + 120*x
+        ]
+
+        number_of_tasks = len(functions)
+
+        domain = np.linspace(0, 1, number_of_tasks+1)
+        _X = [domain[i:i+2] for i in range(number_of_tasks)]
+        X = [np.linspace(*_X[i], 100) for i in range(number_of_tasks)]
+        y_true = [np.array(functions[i](X[i])) for i in range(number_of_tasks)]
+        i = 0
+
+        for x_task, X_task, y_task, y_pred_task in zip(x, X, y_true, y_pred):
+            
+            plt.plot(X_task, y_task, label=f"task {i}, ground truth")
+            ax.scatter(x_task, y_pred_task, label=f"task {i}, predictions", alpha=1.0, edgecolor="black")
+            i += 1
+
+        plt.grid(True)
+        plt.xlabel("$x$", fontsize=25)
+        plt.ylabel("$f(x)$", fontsize=25)
+        plt.legend(fontsize=fontsize)
+        plt.title("Toy Regression 1D - ground truth vs. predictions", fontsize=25)
+        # plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        plt.close()
+
+    elif dataset_name == "GaussianDataset":
+
+        # Generate Gaussians
+        means = np.array([
+            [5, 5],      # Gaussian 1
+            [15, 15],    # Gaussian 2
+            [25, 5],     # Gaussian 3
+            [5, 25],     # Gaussian 4
+            [25, 25]     # Gaussian 5
+        ])
+
+        covariances = [
+            [[3, 1], [1, 2]],       # Covariance for Gaussian 1
+            [[4, 1.5], [1.5, 3]],   # Covariance for Gaussian 2
+            [[2, 0.5], [0.5, 1]],   # Covariance for Gaussian 3
+            [[3, -1], [-1, 2]],     # Covariance for Gaussian 4
+            [[4, -1.5], [-1.5, 3]]  # Covariance for Gaussian 5
+        ]
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        i = 0
+
+        for xy, z_pred_task in zip(x, y_pred):
+            x_task = xy[:, 0]
+            y_task = xy[:, 1]
+
+            # Scatter predictions
+            ax.scatter(x_task, y_task, z_pred_task, alpha=0.3, label=f"task {i}, predictions", edgecolors='black')
+            mu = means[i]
+            covariance = covariances[i]
+
+            # Define the range for the Gaussian surface
+            t = 3  # Scaling factor for range based on covariance
+            x_min, x_max = mu[0] - t * covariance[0][0], mu[0] + t * covariance[0][0]
+            y_min, y_max = mu[1] - t * covariance[1][1], mu[1] + t * covariance[1][1]
+
+            X, Y = np.mgrid[x_min:x_max:100j, y_min:y_max:100j]
+            XY = np.column_stack([X.flat, Y.flat])
+            Z = multivariate_normal.pdf(XY, mean=mu, cov=covariance)
+            Z = Z.reshape(X.shape)
+
+            # Plot the Gaussian surface
+            surf = ax.plot_surface(X, Y, Z, alpha=0.6, label=f"task {i}, ground truth")
+
+            # Add vertical lines for each predicted point
+            for x_pt, y_pt, z_pt in zip(x_task, y_task, z_pred_task):
+                z_surface = multivariate_normal.pdf([x_pt, y_pt], mean=mu, cov=covariance)
+                ax.plot([x_pt, x_pt], [y_pt, y_pt], [z_surface, z_pt], color='red', linewidth=1, alpha=0.8)
+                ax.set_xlabel("$x$")
+                ax.set_ylabel("$y$")
+                ax.set_zlabel("$f(x,y)$")
+
+
+            i += 1
+
+            # Fix for legend issue
+            surf._edgecolors2d = surf._edgecolors3d
+            surf._facecolors2d = surf._facecolors3d
+
+        # Legend and formatting
+        ax.legend(loc='center right', bbox_to_anchor=(0.05, 0.5))
+        plt.title("Gaussians - Ground Truth vs. Predictions")
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        plt.close()
+
+    else:
+        raise NotImplementedError("Regression results visualization is only available for ToyRegression and GaussianMixtures.")
+
 if __name__ == "__main__":
-   
-   pass
+
+    pass

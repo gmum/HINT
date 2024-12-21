@@ -28,56 +28,57 @@ def set_hyperparameters(dataset,
     if dataset == "PermutedMNIST":
         if grid_search:
             hyperparams = {
-                "embedding_sizes": [24],
+                "embedding_sizes": [48],
                 "learning_rates": [0.001],
                 "batch_sizes": [128],
-                "betas": [0.01],
-                "hypernetworks_hidden_layers": [[100, 100]],
-                "perturbated_epsilon": [0.5],
+                "betas": [0.1],
+                "hypernetworks_hidden_layers": [[10, 10]],
+                "perturbated_epsilon": [0.1],
                 "best_model_selection_method": "val_loss",
                 "dropout_rate": [-1],
                 # not for optimization
-                "seed": [1, 2, 3, 4, 5],
+                "seed": [1,2,3],
                 "saving_folder": "./Results/"
-                f"permuted_mnist_final_grid_experiments/last_model/"
+                f"permuted_mnist/"
             }
 
         else:
             # single run experiment
             hyperparams = {
-                "seed": [3],
-                "embedding_sizes": [24],
-                "learning_rates": [0.001],
+                "seed": [1],
+                "embedding_sizes": [48],
+                "learning_rates": [0.0001],
                 "batch_sizes": [128],
                 "betas": [0.01],
-                "perturbated_epsilon": [0.5],
+                "perturbated_epsilon": [0.01],
                 "hypernetworks_hidden_layers": [[100, 100]],
                 "dropout_rate": [-1],
                 "best_model_selection_method": "val_loss",
                 "saving_folder": "./Results/"
-                f"permuted_mnist_final_grid_experiments/last_model/"
+                f"permuted_mnist/"
             }
 
         # Both in the grid search and individual runs
         hyperparams["lr_scheduler"] = False
-        hyperparams["number_of_iterations"] = 5000
+        hyperparams["number_of_iterations"] = 5
         hyperparams["number_of_epochs"] = None
         hyperparams["no_of_validation_samples"] = 500
-        hyperparams["target_hidden_layers"] = [1000, 1000]
-        hyperparams["target_network"] = "MLP"
+        hyperparams["target_network"] = "LeNet"
+        hyperparams["target_hidden_layers"] = [1000, 1000] if hyperparams["target_network"] == "MLP" else None
         hyperparams["resnet_number_of_layer_groups"] = None
         hyperparams["resnet_widening_factor"] = None
-        hyperparams["optimizer"] = "adam"
+        hyperparams["optimizer"] = "rmsprop"
         hyperparams["use_chunks"] = False
         hyperparams["use_batch_norm"] = False
+
         # Directly related to the MNIST dataset
-        hyperparams["padding"] = 2
+        hyperparams["padding"] = 0
         hyperparams["shape"] = (28 + 2 * hyperparams["padding"])**2
-        hyperparams["number_of_tasks"] = 10
+        hyperparams["number_of_tasks"] = 1000
         hyperparams["augmentation"] = False
 
         # Full-interval model or simpler one
-        hyperparams["full_interval"] = True
+        hyperparams["full_interval"] = False
 
     elif dataset == "CIFAR100":
         if grid_search:
@@ -384,16 +385,16 @@ def set_hyperparameters(dataset,
             hyperparams = {
                 "learning_rates": [0.001],
                 "batch_sizes": [128],
-                "betas": [0.01, 0.001, 0.1],
-                "hypernetworks_hidden_layers": [[100, 100], [50, 50], [25, 25]],
+                "betas": [0.001],
+                "hypernetworks_hidden_layers": [[50]],
                 "dropout_rate": [-1],
-                "use_batch_norm": False,
-                "target_network": "ResNet",
-                "perturbated_epsilon": [0.5, 1.0],
+                "use_batch_norm": True,
+                "target_network": "AlexNet",
+                "perturbated_epsilon": [0.5],
                 # seed is not for optimization but for ensuring multiple results
                 "seed": [1],
                 "best_model_selection_method": "val_loss",
-                "embedding_sizes": [24, 48, 72, 96],
+                "embedding_sizes": [48],
                 "augmentation": False,
                 "saving_folder": "./Results/CIFAR10/"
             }
@@ -405,7 +406,7 @@ def set_hyperparameters(dataset,
                 "embedding_sizes": [72],
                 "learning_rates": [0.001],
                 "use_batch_norm": True,
-                "target_network": "AlexNet",
+                "target_network": "ResNet",
                 "batch_sizes": [128],
                 "betas": [0.01],
                 "perturbated_epsilon": [1.0],
@@ -415,7 +416,7 @@ def set_hyperparameters(dataset,
                 "best_model_selection_method": "val_loss",
                 "saving_folder": "./Results/CIFAR10/"
             }
-        hyperparams["lr_scheduler"] = True
+        hyperparams["lr_scheduler"] = False
         hyperparams["resnet_number_of_layer_groups"] = None
         hyperparams["resnet_widening_factor"] = None
         hyperparams["optimizer"] = "adam"
@@ -434,6 +435,180 @@ def set_hyperparameters(dataset,
 
         # Full-interval model or simpler one
         hyperparams["full_interval"] = False
+
+
+    elif dataset == "CUB200":
+        if grid_search:
+            hyperparams = {
+                "seed": [1],
+                "embedding_sizes": [48,64,128],
+                "betas": [0.01, 0.05, 0.1],
+                "learning_rates": [0.001],
+                "batch_sizes": [16,32],
+                "hypernetworks_hidden_layers": [[100],[200],[100,100]],
+                "perturbated_epsilon": [1.0, 0.1, 0.01],
+                "dropout_rate": [-1],
+                "resnet_number_of_layer_groups": 3,
+                "resnet_widening_factor": 2,
+                "optimizer": "adam",
+                "use_batch_norm": True,
+                "target_network": "PretrainedResNet18",
+                "use_chunks": False,
+                "number_of_epochs": 200,
+                "augmentation": True
+            }
+
+        else:
+            # single run experiment
+            hyperparams = {
+                "seed": [1],
+                "embedding_sizes": [48],
+                "betas": [0.01],
+                "batch_sizes": [32],
+                "learning_rates": [0.001],
+                "perturbated_epsilon": [0.01],
+                "hypernetworks_hidden_layers": [[100,100]],
+                "dropout_rate": [-1],
+                "use_batch_norm": True,
+                "use_chunks": False,
+                "resnet_number_of_layer_groups": 3,
+                "resnet_widening_factor": 2,
+                "number_of_epochs": 200,
+                "target_network": "PretrainedResNet18",
+                "optimizer": "adam",
+                "augmentation": True
+            }
+           
+        hyperparams["saving_folder"] = (
+            "./Results/"
+            f"CUB200/"
+            f"final_run/"
+        )
+        hyperparams["lr_scheduler"] = False
+        hyperparams["number_of_iterations"] = None
+        hyperparams["no_of_validation_samples"] = 0
+        if hyperparams["target_network"] in ["ResNet", "ZenkeNet", "AlexNet", "PretrainedResNet18"]:
+            hyperparams["shape"] = 224
+            hyperparams["target_hidden_layers"] = None
+        elif hyperparams["target_network"] == "MLP":
+            hyperparams["shape"] = 3072
+            hyperparams["target_hidden_layers"] = [1000, 1000]
+        hyperparams["number_of_tasks"] = 20
+        hyperparams["padding"] = None
+        hyperparams["best_model_selection_method"] = "val_loss"
+
+        # Full-interval model or simpler one
+        hyperparams["full_interval"] = False
+
+
+    if dataset == "ToyRegression1D":
+        if grid_search:
+            hyperparams = {
+                "embedding_sizes": [2],
+                "learning_rates": [0.001],
+                "batch_sizes": [32],
+                "betas": [0.01],
+                "hypernetworks_hidden_layers": [[10, 10]],
+                "perturbated_epsilon": [1e-4],
+                "best_model_selection_method": "val_loss",
+                "dropout_rate": [-1],
+                # not for optimization
+                "seed": [1,2,3,4,5],
+                "saving_folder": "./Results/"
+                f"toy_regression_1D/"
+            }
+
+        else:
+            # single run experiment
+            hyperparams = {
+                "seed": [1],
+                "embedding_sizes": [48],
+                "learning_rates": [0.001],
+                "batch_sizes": [4],
+                "betas": [0.01],
+                "perturbated_epsilon": [0.001],
+                "hypernetworks_hidden_layers": [[25,25]],
+                "dropout_rate": [-1],
+                "best_model_selection_method": "val_loss",
+                "saving_folder": "./Results/"
+                f"toy_regression_1D/"
+            }
+
+        hyperparams["shape"] = 1
+        hyperparams["padding"] = 0
+        hyperparams["number_of_tasks"] = 5
+        hyperparams["augmentation"] = False
+
+        # Both in the grid search and individual runs
+        hyperparams["lr_scheduler"] = False
+        hyperparams["number_of_iterations"] = 4000
+        hyperparams["number_of_epochs"] = None
+        hyperparams["no_of_validation_samples"] = 50
+        hyperparams["target_network"] = "MLP"
+        hyperparams["target_hidden_layers"] = [50, 50]
+        hyperparams["resnet_number_of_layer_groups"] = None
+        hyperparams["resnet_widening_factor"] = None
+        hyperparams["optimizer"] = "adam"
+        hyperparams["use_chunks"] = False
+        hyperparams["use_batch_norm"] = False
+
+        # Full-interval model or simpler one
+        hyperparams["full_interval"] = True
+
+    if dataset == "GaussianDataset":
+        if grid_search:
+            hyperparams = {
+                "embedding_sizes": [2],
+                "learning_rates": [0.001],
+                "batch_sizes": [32],
+                "betas": [0.01],
+                "hypernetworks_hidden_layers": [[10, 10]],
+                "perturbated_epsilon": [1e-4],
+                "best_model_selection_method": "val_loss",
+                "dropout_rate": [-1],
+                # not for optimization
+                "seed": [1],
+                "saving_folder": "./Results/"
+                f"gaussian_dataset/"
+            }
+
+        else:
+            # single run experiment
+            hyperparams = {
+                "seed": [1],
+                "embedding_sizes": [48],
+                "learning_rates": [0.001],
+                "batch_sizes": [4],
+                "betas": [0.01],
+                "perturbated_epsilon": [0.001],
+                "hypernetworks_hidden_layers": [[25,25]],
+                "dropout_rate": [-1],
+                "best_model_selection_method": "val_loss",
+                "saving_folder": "./Results/"
+                f"gaussian_dataset/"
+            }
+
+        hyperparams["shape"] = 2
+        hyperparams["padding"] = 0
+        hyperparams["number_of_tasks"] = 5
+        hyperparams["augmentation"] = False
+
+        # Both in the grid search and individual runs
+        hyperparams["lr_scheduler"] = False
+        hyperparams["number_of_iterations"] = 4000
+        hyperparams["number_of_epochs"] = None
+        hyperparams["no_of_validation_samples"] = 50
+        hyperparams["target_network"] = "MLP"
+        hyperparams["target_hidden_layers"] = [50, 50]
+        hyperparams["resnet_number_of_layer_groups"] = None
+        hyperparams["resnet_widening_factor"] = None
+        hyperparams["optimizer"] = "adam"
+        hyperparams["use_chunks"] = False
+        hyperparams["use_batch_norm"] = False
+
+        # Full-interval model or simpler one
+        hyperparams["full_interval"] = True
+
 
     # General hyperparameters
     hyperparams["activation_function"] = torch.nn.ReLU()

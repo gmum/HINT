@@ -1,5 +1,5 @@
 """
-This file implements a class with custom loss function used in an interval bound propagation neural networks
+This file implements worst-case loss function used in the framework.
 """
 
 import torch
@@ -9,15 +9,11 @@ class IBP_Loss(nn.Module):
     """
     Custom loss function for Interval Bound Propagation (IBP).
 
-    Args:
-    -----
-    None
-
     Attributes:
     -----------
     bce_loss_func: nn.CrossEntropyLoss
         Cross-entropy loss function.
-    _worst_case_error: float
+    worst_case_error: float
         Worst-case prediction error.
 
     Properties:
@@ -54,7 +50,7 @@ class IBP_Loss(nn.Module):
         """
         self._worst_case_error = value
 
-    def forward(self, y_pred, y, z_l, z_u, kappa=0.5):
+    def forward(self, y_pred, y, z_l, z_u, *args, **kwargs):
         """
         Calculates the total loss for IBP.
 
@@ -76,6 +72,9 @@ class IBP_Loss(nn.Module):
         total_loss: torch.Tensor
             Total calculated loss.
         """
+
+        kappa = kwargs["kappa"]
+
         # Standard cross-entropy loss component
         loss_fit = self.bce_loss_func(y_pred, y)
 
